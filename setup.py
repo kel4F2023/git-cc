@@ -10,9 +10,14 @@ setup(
     package_dir={'': 'src'},
     packages=find_packages(where='src'),
     include_package_data=True,
+    package_data={
+        'git_cc': ['model/classifier.joblib'],
+    },
     install_requires=[
         'scikit-learn>=1.0.0',
         'joblib>=1.0.0',
+        'InquirerPy>=0.3.4',
+        'colorama>=0.4.6',
     ],
     entry_points={
         'console_scripts': [
