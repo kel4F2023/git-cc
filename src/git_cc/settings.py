@@ -18,7 +18,7 @@ class Settings:
             
             if not self.settings_file.exists():
                 default_settings = {
-                    "selected_model": "mini"  # Set mini model as default
+                    "selected_model": "default"  # Changed from "mini" to "default"
                 }
                 self._save_settings(default_settings)
                 return default_settings
@@ -27,11 +27,11 @@ class Settings:
                 with open(self.settings_file, 'r') as f:
                     return json.load(f)
             except Exception:
-                return {"selected_model": "mini"}  # Default to mini if error
+                return {"selected_model": "default"}  # Changed from "mini" to "default"
                 
         except PermissionError:
             print(f"Warning: Cannot write to {self.settings_dir}. Using temporary settings.")
-            return {"selected_model": "mini"}  # Default to mini if permission error
+            return {"selected_model": "default"}  # Changed from "mini" to "default"
 
     def _save_settings(self, settings):
         """Save settings to file"""
@@ -44,7 +44,7 @@ class Settings:
     def get_selected_model(self):
         """Get currently selected model"""
         model = self.settings.get("selected_model")
-        return model if model else "mini"  # Ensure we always return mini as fallback
+        return model if model else "default"  # Changed from "mini" to "default"
 
     def set_selected_model(self, model_name):
         """Set selected model"""

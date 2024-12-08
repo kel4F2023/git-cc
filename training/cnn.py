@@ -1,60 +1,20 @@
 import pandas as pd
-import numpy as np
 import torch
 from torch import nn
 from torch.utils.data import Dataset, DataLoader
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
-from collections import Counter
-import re
 from tqdm import tqdm
 import torch.nn.functional as F
+from git_cc.transformers import VocabularyBuilder
+from pathlib import Path
 
 # Set device
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-class VocabularyBuilder:
-    def __init__(self, min_freq=2, max_vocab_size=10000):
-        self.word2idx = {'<pad>': 0, '<unk>': 1}
-        self.idx2word = {0: '<pad>', 1: '<unk>'}
-        self.word_freq = Counter()
-        self.min_freq = min_freq
-        self.max_vocab_size = max_vocab_size
-
-    def build(self, texts):
-        # Count words
-        for text in texts:
-            words = self._tokenize(text)
-            self.word_freq.update(words)
-        
-        # Filter by frequency and vocab size
-        valid_words = [word for word, count in self.word_freq.most_common(self.max_vocab_size) 
-                      if count >= self.min_freq]
-        
-        # Create vocabulary
-        for word in valid_words:
-            if word not in self.word2idx:
-                idx = len(self.word2idx)
-                self.word2idx[word] = idx
-                self.idx2word[idx] = word
-    
-    def _tokenize(self, text):
-        # Simple tokenization
-        text = text.lower()
-        text = re.sub(r'[^\w\s]', '', text)
-        return text.split()
-
-    def text_to_indices(self, text, max_length=100):
-        words = self._tokenize(text)
-        indices = [self.word2idx.get(word, 1) for word in words[:max_length]]  # 1 is <unk>
-        # Pad if necessary
-        if len(indices) < max_length:
-            indices += [0] * (max_length - len(indices))  # 0 is <pad>
-        return indices
-
 class CommitDataset(Dataset):
     def __init__(self, texts, labels, vocab, max_length=100):
-        self.texts = texts.reset_index(drop=True)  # Reset index to avoid missing keys
+        self.texts = texts.reset_index(drop=True)
         self.labels = labels
         self.vocab = vocab
         self.max_length = max_length
@@ -163,9 +123,9 @@ def main():
     vocab = VocabularyBuilder(min_freq=2, max_vocab_size=10000)
     vocab.build(data['commit_message'])
     
-    # Split data and convert to pandas Series
+    # Split data
     X_train, X_test, y_train, y_test = train_test_split(
-        pd.Series(data['commit_message']),  # Convert to Series
+        pd.Series(data['commit_message']),
         encoded_labels,
         test_size=0.2,
         random_state=42
@@ -216,7 +176,12 @@ def main():
         
         if val_acc > best_accuracy:
             best_accuracy = val_acc
-            # Save the best model
+            
+            # Create model directory if it doesn't exist
+            model_dir = Path('../src/git_cc/model')
+            model_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Save the model components
             model_save = {
                 'model_state_dict': model.state_dict(),
                 'vocab': vocab,
@@ -230,7 +195,18 @@ def main():
                     'pad_idx': PAD_IDX
                 }
             }
-            torch.save(model_save, '../src/git_cc/model/cnn_classifier.pt')
+            
+            # Add VocabularyBuilder to safe globals before saving
+            from torch.serialization import add_safe_globals
+            add_safe_globals([VocabularyBuilder])
+            
+            # Save the model
+            torch.save(
+                model_save,
+                model_dir / 'default.pt',
+                _use_new_zipfile_serialization=True
+            )
+            print(f"Saved model with accuracy: {val_acc:.4f}")
 
 if __name__ == "__main__":
     main()

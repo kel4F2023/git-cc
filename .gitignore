@@ -1,4 +1,7 @@
 .idea
+.vscode
 build
-classifier.joblib
 src/git_cc.egg-info
+src/git_cc/config/
+src/git_cc/__pycache__/
+src/git_cc/models/advanced.joblib

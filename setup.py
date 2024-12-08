@@ -1,4 +1,9 @@
 from setuptools import setup, find_packages
+import os
+
+# Create empty config directory
+config_dir = os.path.join('src', 'git_cc', 'config')
+os.makedirs(config_dir, exist_ok=True)
 
 setup(
     name='git-cc',
@@ -11,13 +16,14 @@ setup(
     packages=find_packages(where='src'),
     include_package_data=True,
     package_data={
-        'git_cc': ['model/classifier.joblib'],
+        'git_cc': ['model/*', 'config/*'],
     },
     install_requires=[
         'scikit-learn>=1.0.0',
         'joblib>=1.0.0',
         'InquirerPy>=0.3.4',
         'colorama>=0.4.6',
+        'torch>=2.0.0',
     ],
     entry_points={
         'console_scripts': [

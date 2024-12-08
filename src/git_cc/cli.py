@@ -9,7 +9,7 @@ import joblib
 from colorama import Fore, Style, Back
 from InquirerPy import inquirer
 from .settings import Settings
-from .transformers import MetadataExtractor
+from .transformers import MetadataExtractor, CNNCommitClassifier
 
 LOG_HEADING = f"[GIT-CC]"
 
@@ -40,8 +40,10 @@ def get_available_models():
     model_dir = Path(__file__).parent / "model"
     if not model_dir.exists():
         return []
-    # Remove .joblib extension and map to display names
-    models = [f.stem for f in model_dir.glob("*.joblib")]
+    # Get both .joblib and .pt files
+    models = []
+    for ext in ['.joblib', '.pt']:
+        models.extend([f.stem for f in model_dir.glob(f"*{ext}")])
     return sorted(models)
 
 
@@ -52,13 +54,17 @@ def get_model_path(model_name=None):
         
         # If specific model is requested, return its path if it exists
         if model_name:
-            model_path = model_dir / f"{model_name}.joblib"
-            if model_path.exists():
-                return str(model_path)
+            # Try both .joblib and .pt extensions
+            for ext in ['.pt', '.joblib']:
+                model_path = model_dir / f"{model_name}{ext}"
+                if model_path.exists():
+                    return str(model_path)
             raise FileNotFoundError(f"Model {model_name} not found")
 
-        # Default model selection logic - use mini as default
-        if (model_dir / "mini.joblib").exists():
+        # Default model selection logic - use default as default
+        if (model_dir / "default.pt").exists():
+            return str(model_dir / "default.pt")
+        elif (model_dir / "mini.joblib").exists():
             return str(model_dir / "mini.joblib")
         elif (model_dir / "advanced.joblib").exists():
             return str(model_dir / "advanced.joblib")
@@ -101,23 +107,33 @@ def copy_model_file(source_path):
 
 class CommitClassifier:
     def __init__(self, model_name=None):
-        self.pipeline = None
-        self.label_encoder = None
+        self.classifier = None
         self.load_model(model_name)
 
     def load_model(self, model_name=None):
         """Load the pre-trained model"""
         try:
             model_path = get_model_path(model_name)
-            model_data = joblib.load(model_path)
             
-            if isinstance(model_data, dict):
-                self.pipeline = model_data.get('pipeline')
-                self.label_encoder = model_data.get('label_encoder')
-                if self.pipeline is None or self.label_encoder is None:
-                    raise ValueError("Invalid model format: missing required components")
+            # Check file extension to determine model type
+            if model_path.endswith('.pt'):
+                self.classifier = CNNCommitClassifier(model_path)
             else:
-                raise ValueError("Invalid model format: expected dictionary")
+                # Load scikit-learn model
+                model_data = joblib.load(model_path)
+                if not isinstance(model_data, dict):
+                    raise ValueError("Invalid model format: expected dictionary")
+                
+                self.classifier = type('SklearnClassifier', (), {
+                    'pipeline': model_data.get('pipeline'),
+                    'label_encoder': model_data.get('label_encoder'),
+                    'predict': lambda self, msg: self.label_encoder.inverse_transform(
+                        [self.pipeline.predict([msg])[0]]
+                    )[0]
+                })()
+                
+                if self.classifier.pipeline is None or self.classifier.label_encoder is None:
+                    raise ValueError("Invalid model format: missing required components")
                 
         except Exception as e:
             print(format_error(f"Error loading model: {e}"), file=sys.stderr)
@@ -126,15 +142,26 @@ class CommitClassifier:
     def predict(self, message):
         """Predict commit type for a message"""
         try:
-            if self.pipeline is None or self.label_encoder is None:
+            if self.classifier is None:
                 raise ValueError("Model not properly loaded")
-            # Get numeric prediction
-            numeric_pred = self.pipeline.predict([message])[0]
-            # Convert to string label
-            return self.label_encoder.inverse_transform([numeric_pred])[0]
+            return self.classifier.predict(message)
         except Exception as e:
             print(format_error(f"Error predicting commit type: {e}"), file=sys.stderr)
             return 'chore'  # Default fallback
+
+    def learn_from_feedback(self, message, commit_type, accepted):
+        """Learn from user feedback"""
+        if hasattr(self.classifier, 'learn_from_feedback'):
+            # Convert boolean acceptance to reward
+            reward = 1.0 if accepted else -0.5
+            loss = self.classifier.learn_from_feedback(message, commit_type, reward)
+            
+            # Save the model if it was updated
+            if loss is not None:
+                model_path = get_model_path('rl')
+                self.classifier.save(model_path)
+                return loss
+        return None
 
 
 def list_models(settings):
@@ -146,7 +173,9 @@ def list_models(settings):
         print(format_info("Available models:"))
         for model in models:
             description = ""
-            if model == "mini":
+            if model == "default":
+                description = f"{Style.DIM}(Deep Learning CNN with word embeddings - Recommended){Style.RESET_ALL}"
+            elif model == "mini":
                 description = f"{Style.DIM}(Lightweight TF-IDF with Naive Bayes classifier){Style.RESET_ALL}"
             elif model == "advanced":
                 description = f"{Style.DIM}(Advanced Random Forest with metadata features){Style.RESET_ALL}"
@@ -173,7 +202,9 @@ def select_model(settings):
     choices_display = []
     for model in models:
         display = model
-        if model == "mini":
+        if model == "default":
+            display = f"{model} - Deep Learning CNN with word embeddings (Recommended)"
+        elif model == "mini":
             display = f"{model} - Lightweight TF-IDF with Naive Bayes classifier"
         elif model == "advanced":
             display = f"{model} - Advanced Random Forest with metadata features"
@@ -239,8 +270,13 @@ def main():
                 f"Do you want to proceed with commit type '{Back.GREEN}{Style.BRIGHT}{commit_type}{Style.RESET_ALL}'? [Y/n]: ")
         ).strip().lower()
 
-        if user_input in ('yes', 'y', ''):  # Accepts Yes, Y, or Enter as confirmation
+        if user_input in ('yes', 'y', ''):
             git_commit(args.message, commit_type)
+            # Learn from positive feedback
+            if selected_model == 'rl':
+                loss = classifier.learn_from_feedback(args.message, commit_type, True)
+                if loss is not None:
+                    print(format_info(f"Model updated (loss: {loss:.4f})"))
             print(format_success(f"{Fore.GREEN}Commit process completed.{Style.RESET_ALL}"))
         else:
             print(format_info(f"{Fore.YELLOW}You chose not to proceed with the predicted type.{Style.RESET_ALL}"))
@@ -249,19 +285,24 @@ def main():
             commit_types = ['feat', 'fix', 'chore', 'docs', 'style', 'refactor', 'test', 'perf', 'ci']
 
             # Interactive selection using InquirerPy
-            commit_type = inquirer.select(
+            selected_type = inquirer.select(
                 message="Select the commit type:",
                 choices=commit_types,
                 default=commit_type,
             ).execute()
 
-            print(format_info(f"Selected commit type: {Fore.CYAN}{commit_type}{Style.RESET_ALL}"))
+            print(format_info(f"Selected commit type: {Fore.CYAN}{selected_type}{Style.RESET_ALL}"))
+
+            # Learn from negative feedback and new selection
+            if selected_model == 'rl':
+                classifier.learn_from_feedback(args.message, commit_type, False)
+                classifier.learn_from_feedback(args.message, selected_type, True)
 
             # Ask for final confirmation after manual selection
             user_input = input(
-                format_info(f"Do you want to proceed with commit type '{Fore.GREEN}{commit_type}{Style.RESET_ALL}'? [Yes/No]: ")).strip().lower()
+                format_info(f"Do you want to proceed with commit type '{Fore.GREEN}{selected_type}{Style.RESET_ALL}'? [Yes/No]: ")).strip().lower()
             if user_input in ('yes', 'y', ''):
-                git_commit(args.message, commit_type)
+                git_commit(args.message, selected_type)
                 print(format_success(f"{Fore.GREEN}Commit process completed.{Style.RESET_ALL}"))
             else:
                 print(format_error(f"{Fore.RED}Commit process terminated.{Style.RESET_ALL}"))
