@@ -149,43 +149,35 @@ class CommitClassifier:
             print(format_error(f"Error predicting commit type: {e}"), file=sys.stderr)
             return 'chore'  # Default fallback
 
-    def learn_from_feedback(self, message, commit_type, accepted):
-        """Learn from user feedback"""
-        if hasattr(self.classifier, 'learn_from_feedback'):
-            # Convert boolean acceptance to reward
-            reward = 1.0 if accepted else -0.5
-            loss = self.classifier.learn_from_feedback(message, commit_type, reward)
-            
-            # Save the model if it was updated
-            if loss is not None:
-                model_path = get_model_path('rl')
-                self.classifier.save(model_path)
-                return loss
-        return None
-
 
 def list_models(settings):
     """List available models with currently selected model marked"""
     models = get_available_models()
     selected_model = settings.get_selected_model()
     
-    if models:
-        print(format_info("Available models:"))
-        for model in models:
-            description = ""
-            if model == "default":
-                description = f"{Style.DIM}(Deep Learning CNN with word embeddings - Recommended){Style.RESET_ALL}"
-            elif model == "mini":
-                description = f"{Style.DIM}(Lightweight TF-IDF with Naive Bayes classifier){Style.RESET_ALL}"
-            elif model == "advanced":
-                description = f"{Style.DIM}(Advanced Random Forest with metadata features){Style.RESET_ALL}"
-            
-            if model == selected_model:
-                print(f"  {Fore.GREEN}✓{Style.RESET_ALL} {Fore.CYAN}{model}{Style.RESET_ALL} {description}")
+    print(format_info("Available models:"))
+    
+    # Always show these models in a specific order
+    all_models = ['default', 'mini', 'advanced']
+    
+    for model in all_models:
+        description = ""
+        if model == "default":
+            description = f"{Style.DIM}(Deep Learning CNN with word embeddings - Recommended){Style.RESET_ALL}"
+        elif model == "mini":
+            description = f"{Style.DIM}(Lightweight TF-IDF with Naive Bayes classifier){Style.RESET_ALL}"
+        elif model == "advanced":
+            description = f"{Style.DIM}(Advanced Random Forest with metadata features - External Download Required){Style.RESET_ALL}"
+        
+        # Show checkmark only if model is selected AND available
+        if model == selected_model and model in models:
+            print(f"  {Fore.GREEN}✓{Style.RESET_ALL} {Fore.CYAN}{model}{Style.RESET_ALL} {description}")
+        else:
+            # Show model as unavailable if it's not in the available models
+            if model not in models:
+                print(f"    {Fore.CYAN}{model}{Style.RESET_ALL} {description} {Fore.YELLOW}(not installed){Style.RESET_ALL}")
             else:
                 print(f"    {Fore.CYAN}{model}{Style.RESET_ALL} {description}")
-    else:
-        print(format_warning("No models available"))
 
 
 def select_model(settings):
@@ -198,9 +190,13 @@ def select_model(settings):
     current_model = settings.get_selected_model()
     choices = models.copy()
     
+    # Add advanced model to choices if not present
+    if 'advanced' not in choices:
+        choices.append('advanced')
+    
     # Format choices to show current selection with descriptions
     choices_display = []
-    for model in models:
+    for model in choices:
         display = model
         if model == "default":
             display = f"{model} - Deep Learning CNN with word embeddings (Recommended)"
@@ -208,6 +204,8 @@ def select_model(settings):
             display = f"{model} - Lightweight TF-IDF with Naive Bayes classifier"
         elif model == "advanced":
             display = f"{model} - Advanced Random Forest with metadata features"
+        elif model == "rl":
+            display = f"{model} - Reinforcement Learning model that learns from feedback"
             
         if model == current_model:
             display = f"{display} {Fore.GREEN}(current){Style.RESET_ALL}"
@@ -221,6 +219,14 @@ def select_model(settings):
     
     # Extract the model name from the selection (remove description and current marker)
     selected_model = selected.split(' - ')[0]
+    
+    # Special handling for advanced model
+    if selected_model == 'advanced':
+        print(format_warning("The advanced model requires external download."))
+        print(format_info("Please download the model from the official repository and place it in the model directory."))
+        print(format_info("For more information, visit: https://github.com/yourusername/git-cc"))
+        sys.exit(1)
+    
     settings.set_selected_model(selected_model)
     print(format_success(f"Selected model: {Fore.CYAN}{selected_model}{Style.RESET_ALL}"))
     return selected_model
@@ -272,11 +278,6 @@ def main():
 
         if user_input in ('yes', 'y', ''):
             git_commit(args.message, commit_type)
-            # Learn from positive feedback
-            if selected_model == 'rl':
-                loss = classifier.learn_from_feedback(args.message, commit_type, True)
-                if loss is not None:
-                    print(format_info(f"Model updated (loss: {loss:.4f})"))
             print(format_success(f"{Fore.GREEN}Commit process completed.{Style.RESET_ALL}"))
         else:
             print(format_info(f"{Fore.YELLOW}You chose not to proceed with the predicted type.{Style.RESET_ALL}"))
@@ -285,24 +286,19 @@ def main():
             commit_types = ['feat', 'fix', 'chore', 'docs', 'style', 'refactor', 'test', 'perf', 'ci']
 
             # Interactive selection using InquirerPy
-            selected_type = inquirer.select(
+            commit_type = inquirer.select(
                 message="Select the commit type:",
                 choices=commit_types,
                 default=commit_type,
             ).execute()
 
-            print(format_info(f"Selected commit type: {Fore.CYAN}{selected_type}{Style.RESET_ALL}"))
-
-            # Learn from negative feedback and new selection
-            if selected_model == 'rl':
-                classifier.learn_from_feedback(args.message, commit_type, False)
-                classifier.learn_from_feedback(args.message, selected_type, True)
+            print(format_info(f"Selected commit type: {Fore.CYAN}{commit_type}{Style.RESET_ALL}"))
 
             # Ask for final confirmation after manual selection
             user_input = input(
-                format_info(f"Do you want to proceed with commit type '{Fore.GREEN}{selected_type}{Style.RESET_ALL}'? [Yes/No]: ")).strip().lower()
+                format_info(f"Do you want to proceed with commit type '{Fore.GREEN}{commit_type}{Style.RESET_ALL}'? [Yes/No]: ")).strip().lower()
             if user_input in ('yes', 'y', ''):
-                git_commit(args.message, selected_type)
+                git_commit(args.message, commit_type)
                 print(format_success(f"{Fore.GREEN}Commit process completed.{Style.RESET_ALL}"))
             else:
                 print(format_error(f"{Fore.RED}Commit process terminated.{Style.RESET_ALL}"))
