@@ -9,6 +9,7 @@ import joblib
 from colorama import Fore, Style, Back
 from InquirerPy import inquirer
 from .settings import Settings
+from .transformers import MetadataExtractor
 
 LOG_HEADING = f"[GIT-CC]"
 
@@ -101,21 +102,22 @@ def copy_model_file(source_path):
 class CommitClassifier:
     def __init__(self, model_name=None):
         self.pipeline = None
+        self.label_encoder = None
         self.load_model(model_name)
 
     def load_model(self, model_name=None):
         """Load the pre-trained model"""
         try:
             model_path = get_model_path(model_name)
-            loaded_data = joblib.load(model_path)
+            model_data = joblib.load(model_path)
             
-            # Handle both dictionary and direct pipeline formats
-            if isinstance(loaded_data, dict):
-                self.pipeline = loaded_data.get('model')
-                if self.pipeline is None:
-                    raise ValueError("Invalid model format: 'model' key not found")
+            if isinstance(model_data, dict):
+                self.pipeline = model_data.get('pipeline')
+                self.label_encoder = model_data.get('label_encoder')
+                if self.pipeline is None or self.label_encoder is None:
+                    raise ValueError("Invalid model format: missing required components")
             else:
-                self.pipeline = loaded_data
+                raise ValueError("Invalid model format: expected dictionary")
                 
         except Exception as e:
             print(format_error(f"Error loading model: {e}"), file=sys.stderr)
@@ -124,9 +126,12 @@ class CommitClassifier:
     def predict(self, message):
         """Predict commit type for a message"""
         try:
-            if self.pipeline is None:
+            if self.pipeline is None or self.label_encoder is None:
                 raise ValueError("Model not properly loaded")
-            return self.pipeline.predict([message])[0]
+            # Get numeric prediction
+            numeric_pred = self.pipeline.predict([message])[0]
+            # Convert to string label
+            return self.label_encoder.inverse_transform([numeric_pred])[0]
         except Exception as e:
             print(format_error(f"Error predicting commit type: {e}"), file=sys.stderr)
             return 'chore'  # Default fallback
