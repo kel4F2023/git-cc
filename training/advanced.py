@@ -49,6 +49,14 @@ def main():
     # Train the pipeline
     feature_pipeline.fit(X_train, y_train)
     
+    # Print top 10 important features
+    feature_importances = feature_pipeline.named_steps['classifier'].feature_importances_
+    feature_names = feature_pipeline.named_steps['features'].get_feature_names_out()
+    top_indices = feature_importances.argsort()[-10:][::-1]
+    print("\nTop 10 Important Features:")
+    for index in top_indices:
+        print(f"{feature_names[index]}: {feature_importances[index]:.4f}")
+
     # Make predictions
     y_pred = feature_pipeline.predict(X_test)
     

@@ -33,7 +33,17 @@ class MetadataExtractor(BaseEstimator, TransformerMixin):
             for keyword in keywords:
                 features[f'has_{keyword}'] = int(bool(re.search(rf'\b{keyword}\b', message.lower())))
             features_list.append(list(features.values()))
-        return np.array(features_list) 
+        return np.array(features_list)
+    
+    def get_feature_names_out(self, input_features=None):
+        # Define the feature names based on the features extracted
+        feature_names = [
+            'msg_length', 'word_count', 'has_issue_ref', 'has_version',
+            'has_file_extension', 'has_url', 'has_code'
+        ]
+        keywords = ['fix', 'bug', 'feature', 'implement', 'update', 'add', 'remove', 'refactor', 'test']
+        feature_names.extend([f'has_{keyword}' for keyword in keywords])
+        return np.array(feature_names)
 
 class CommitTypeEncoder(LabelEncoder):
     """Custom label encoder that preserves commit type labels"""
