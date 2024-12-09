@@ -296,7 +296,7 @@ def main():
 
             # Ask for final confirmation after manual selection
             user_input = input(
-                format_info(f"Do you want to proceed with commit type '{Fore.GREEN}{commit_type}{Style.RESET_ALL}'? [Yes/No]: ")).strip().lower()
+                format_info(f"Do you want to proceed with commit type '{Fore.GREEN}{commit_type}{Style.RESET_ALL}'? [Y/n]: ")).strip().lower()
             if user_input in ('yes', 'y', ''):
                 git_commit(args.message, commit_type)
                 print(format_success(f"{Fore.GREEN}Commit process completed.{Style.RESET_ALL}"))
