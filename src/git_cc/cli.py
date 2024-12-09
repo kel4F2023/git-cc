@@ -153,14 +153,14 @@ class CommitClassifier:
 def list_models(settings):
     """List available models with currently selected model marked"""
     models = get_available_models()
+    print(models)
     selected_model = settings.get_selected_model()
     
     print(format_info("Available models:"))
     
-    # Always show these models in a specific order
-    all_models = ['default', 'mini', 'advanced']
+    models.append('advanced')
     
-    for model in all_models:
+    for model in models:
         description = ""
         if model == "default":
             description = f"{Style.DIM}(Deep Learning CNN with word embeddings - Recommended){Style.RESET_ALL}"
@@ -208,7 +208,7 @@ def select_model(settings):
             display = f"{model} - Reinforcement Learning model that learns from feedback"
             
         if model == current_model:
-            display = f"{display} {Fore.GREEN}(current){Style.RESET_ALL}"
+            display = f"{display} (current)"
         choices_display.append(display)
     
     selected = inquirer.select(
